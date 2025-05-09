@@ -20,22 +20,6 @@ interface Post {
   category: string;
 }
 
-interface ContentTemplate {
-  titles: string[];
-  contents: string[];
-  images?: string[];
-}
-
-interface CategoryContent {
-  [key: string]: ContentTemplate;
-}
-
-interface ContentTemplates {
-  image: CategoryContent;
-  video: CategoryContent;
-  game: CategoryContent;
-}
-
 // Styled Components
 const Container = styled.div`
   max-width: 100%;
