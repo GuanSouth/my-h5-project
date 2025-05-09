@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import styled from 'styled-components';
 import { faker } from '@faker-js/faker';
-import PullToRefresh from 'react-pull-to-refresh';
+import { useSpring, animated } from '@react-spring/web';
+import { useDrag } from '@use-gesture/react';
 
 // Types
 interface Post {
@@ -108,11 +109,6 @@ const Title = styled.h3`
   font-weight: 500;
   line-height: 1.4;
   color: #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 `;
 
 const Description = styled.p`
@@ -120,11 +116,6 @@ const Description = styled.p`
   font-size: 13px;
   color: #666;
   line-height: 1.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 `;
 
 const Stats = styled.div`
@@ -134,12 +125,6 @@ const Stats = styled.div`
   border-top: 1px solid #f5f5f5;
   color: #999;
   font-size: 13px;
-  
-  span {
-    display: flex;
-    align-items: center;
-    margin-right: 16px;
-  }
 `;
 
 const Category = styled.div`
@@ -160,182 +145,65 @@ const LoadingSpinner = styled.div`
   font-size: 14px;
 `;
 
-const PullToRefreshContainer = styled.div`
-  .ptr__pull-down {
-    background: #f7f7f7;
-    height: 50px;
-    line-height: 50px;
-    text-align: center;
-    color: #666;
-    font-size: 14px;
-  }
+const RefreshIndicator = styled.div<{ visible: boolean }>`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f7f7f7;
+  transform: translateY(${props => props.visible ? '0' : '-100%'});
+  transition: transform 0.3s ease;
+  z-index: 1000;
+`;
 
-  .ptr__release {
-    background: #f7f7f7;
-  }
-
-  .ptr__loading {
-    background: #f7f7f7;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 10px;
-    
-    &::after {
-      content: '';
-      width: 20px;
-      height: 20px;
-      border: 2px solid #666;
-      border-top-color: transparent;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
+const AnimatedContainer = styled(animated.div)`
+  min-height: 100vh;
+  background-color: #f7f7f7;
 `;
 
 // Mock data generator
 const generateMockPost = (type: string = 'random', category?: string): Post => {
   const types = ['image', 'video', 'game'] as const;
-  
-  // 内容类型与分类的映射关系
   const typeCategories = {
     image: ['优质用户推荐', '同人创作', '装扮展示'],
     video: ['版本前瞻', '游戏实况', '精彩集锦'],
     game: ['每日攻略', '副本攻略', '装备搭配']
   };
 
-  // 根据type选择合适的分类
   const selectedType = type === 'random' 
     ? types[Math.floor(Math.random() * types.length)]
     : (type as typeof types[number]);
-  
-  const availableCategories = typeCategories[selectedType];
+
+  const availableCategories = typeCategories[selectedType as keyof typeof typeCategories];
   const selectedCategory = category && availableCategories.includes(category)
     ? category
     : availableCategories[Math.floor(Math.random() * availableCategories.length)];
 
-  // 不同类型的内容模板
-  const contentTemplates: ContentTemplates = {
-    image: {
-      '优质用户推荐': {
-        titles: [
-          '『童话小屋』超美的家园装饰分享✨',
-          '『温馨小窝』我的梦幻庭院设计🏡',
-          '『创意工坊』这些家具搭配绝了！🎨'
-        ],
-        contents: [
-          '分享一下我的小屋装扮，花了好久才布置好，喜欢的话记得点赞哦~',
-          '庭院里种满了花花草草，还有可爱的小动物，快来参观吧！',
-          '独特的家具搭配技巧，让你的小屋焕然一新！'
-        ],
-        images: [
-          'https://picsum.photos/seed/house1/400/500',
-          'https://picsum.photos/seed/house2/400/300',
-          'https://picsum.photos/seed/house3/400/400'
-        ]
-      },
-      '同人创作': {
-        titles: [
-          '『同人绘画』最新角色立绘分享🎨',
-          '『玩家创作』游戏场景重现✏️',
-          '『插画分享』新角色设计构思💫'
-        ],
-        contents: [
-          '花了一周时间画的新角色，希望大家喜欢！',
-          '用手绘还原了游戏中最喜欢的场景，分享给大家~',
-          '新角色的设计灵感来自于...'
-        ],
-        images: [
-          'https://picsum.photos/seed/art1/400/400',
-          'https://picsum.photos/seed/art2/400/500',
-          'https://picsum.photos/seed/art3/400/300'
-        ]
-      }
-    },
-    video: {
-      '版本前瞻': {
-        titles: [
-          '【版本前瞻】全新玩法抢先看！🎮',
-          '【更新预告】新地图即将上线！🗺️',
-          '【爆料时间】新角色技能展示！⚔️'
-        ],
-        contents: [
-          '2.0版本带来革命性更新，一起来看看有哪些惊喜吧！',
-          '广大玩家期待已久的雪山地图终于要来了！',
-          '新角色技能特效华丽，操作感超棒！'
-        ]
-      },
-      '游戏实况': {
-        titles: [
-          '【实况】史诗级团战回放！💥',
-          '【高能时刻】极限1v3翻盘！🏆',
-          '【欢乐时刻】搞笑集锦第8期😆'
-        ],
-        contents: [
-          '这波团战打得太精彩了，关键时刻的操作太帅了！',
-          '被包围的绝境翻盘，看我是如何绝处逢生的！',
-          '游戏中的各种搞笑时刻，保证让你笑出声！'
-        ]
-      }
-    },
-    game: {
-      '每日攻略': {
-        titles: [
-          '【每日攻略】新手必看技巧分享📖',
-          '【战斗指南】Boss战技巧详解🗡️',
-          '【进阶教程】高分技巧分享🏅'
-        ],
-        contents: [
-          '萌新福利！详细的新手教程，让你快速上手！',
-          '困难Boss终于不再难打，这些技巧一学就会！',
-          '想要提升游戏水平？这些进阶技巧不容错过！'
-        ]
-      },
-      '装备搭配': {
-        titles: [
-          '【最强搭配】T0配装推荐⚔️',
-          '【平民攻略】平民玩家配装指南🛡️',
-          '【专属搭配】各职业最佳装备选择💎'
-        ],
-        contents: [
-          '最新版本最强装备搭配推荐，助你轻松上分！',
-          '不氪也能玩出高输出，平民玩家必看！',
-          '各职业的最佳装备搭配详解，让你的角色更强力！'
-        ]
-      }
-    }
-  };
-
-  const typeContent = contentTemplates[selectedType];
-  const categoryContent = typeContent[selectedCategory];
-  const randomIndex = Math.floor(Math.random() * categoryContent.titles.length);
-
   const mockAvatars = [
-    'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix&backgroundColor=b6e3f4',
-    'https://api.dicebear.com/7.x/adventurer/svg?seed=Lily&backgroundColor=ffdfbf',
-    'https://api.dicebear.com/7.x/adventurer/svg?seed=Max&backgroundColor=c0aede',
-    'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna&backgroundColor=ffd5dc'
+    'https://api.dicebear.com/7.x/adventurer/svg?seed=Felix',
+    'https://api.dicebear.com/7.x/adventurer/svg?seed=Lily',
+    'https://api.dicebear.com/7.x/adventurer/svg?seed=Max',
+    'https://api.dicebear.com/7.x/adventurer/svg?seed=Luna'
   ];
 
   const mockUsernames = ['小鱼儿🐟', '青空千绪✨', '大橘无情🐱', '迷你世界玩家🎮'];
+  const randomSeed = Math.floor(Math.random() * 1000);
 
   return {
     id: faker.string.uuid(),
-    title: categoryContent.titles[randomIndex],
-    content: categoryContent.contents[randomIndex],
+    title: `${selectedCategory} - ${faker.lorem.words(3)}`,
+    content: faker.lorem.sentence(10),
     imageUrl: selectedType === 'image' 
-      ? (categoryContent.images ? categoryContent.images[randomIndex] : `https://picsum.photos/seed/${faker.string.numeric(5)}/400/300`)
+      ? `https://picsum.photos/seed/${randomSeed}/400/500`
       : undefined,
     videoUrl: selectedType === 'video' 
       ? 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4'
       : undefined,
-    likes: faker.number.int({ min: 5, max: 100 }),
+    likes: Math.floor(Math.random() * 95) + 5,
     author: {
       name: mockUsernames[Math.floor(Math.random() * mockUsernames.length)],
       avatar: mockAvatars[Math.floor(Math.random() * mockAvatars.length)]
@@ -348,79 +216,116 @@ const generateMockPost = (type: string = 'random', category?: string): Post => {
 const App: React.FC = () => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(1);
+  const [refreshing, setRefreshing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [contentType, setContentType] = useState<string>('random');
-  const [category, setCategory] = useState<string | undefined>();
+  
+  const [{ y }, api] = useSpring(() => ({ y: 0 }));
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const type = urlParams.get('type') || 'random';
-    const cat = urlParams.get('category');
-    setContentType(type);
-    setCategory(cat || undefined);
-    loadMorePosts(type, cat || undefined);
-  }, []);
+  const [contentType, setContentType] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('type') ?? 'image';
+  });
+  
+  const [category, setCategory] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('category') ?? '';
+  });
 
-  const loadMorePosts = async (type: string = contentType, cat?: string) => {
+  // Load posts
+  const loadPosts = useCallback(async (refresh: boolean = false) => {
     if (loading) return;
     setLoading(true);
     
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const newPosts = Array(10).fill(null).map(() => generateMockPost(type, cat));
-    
-    setPosts(prev => [...prev, ...newPosts]);
-    setPage(prev => prev + 1);
-    setLoading(false);
-  };
+    try {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const newPosts = Array(6).fill(null).map(() => generateMockPost(contentType, category));
+      setPosts(prev => refresh ? newPosts : [...prev, ...newPosts]);
+    } catch (error) {
+      console.error('Failed to load posts:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [contentType, category, loading]);
 
+  // Initial load
+  useEffect(() => {
+    loadPosts(true);
+  }, [contentType, category]);
+
+  // Handle pull-to-refresh
+  const bind = useDrag(
+    ({ down, movement: [mx, my], cancel, direction: [dx, dy] }) => {
+      // 只在向下拖动时触发
+      if (dy < 0) return;
+      
+      // 如果滚动位置不在顶部，不触发下拉刷新
+      if (window.scrollY > 0) return;
+
+      if (my > 100 && !refreshing) {
+        setRefreshing(true);
+        cancel();
+        
+        // 执行刷新
+        loadPosts(true).then(() => {
+          setRefreshing(false);
+          api.start({ y: 0 });
+        });
+      }
+
+      // 更新拖动位置
+      api.start({
+        y: down ? my : 0,
+        immediate: down,
+      });
+    },
+    {
+      bounds: { top: 0, bottom: 150 },
+      rubberband: true,
+    }
+  );
+
+  // Handle infinite scroll
   useEffect(() => {
     const handleScroll = () => {
-      if (!containerRef.current) return;
+      if (loading || refreshing) return;
       
-      const { scrollTop, clientHeight, scrollHeight } = document.documentElement;
-      if (scrollTop + clientHeight >= scrollHeight - 100 && !loading) {
-        loadMorePosts();
+      const scrolledToBottom =
+        window.innerHeight + window.pageYOffset >= document.documentElement.scrollHeight - 200;
+
+      if (scrolledToBottom) {
+        loadPosts(false);
       }
     };
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [loading, contentType, category]);
-
-  const handleRefresh = async () => {
-    setLoading(true);
-    setPosts([]);
-    setPage(1);
-    await loadMorePosts(contentType, category);
-    setLoading(false);
-    return Promise.resolve();
-  };
+  }, [loading, loadPosts, refreshing]);
 
   return (
-    <PullToRefreshContainer>
-      <PullToRefresh
-        onRefresh={handleRefresh}
-        pullDownThreshold={70}
-        resistance={2.5}
-        pullDownContent={<div className="ptr__pull-down">👇 下拉刷新</div>}
-        releaseContent={<div className="ptr__release">✌️ 松手刷新</div>}
-        refreshContent={<div className="ptr__loading"></div>}
+    <>
+      <RefreshIndicator visible={refreshing}>
+        {refreshing ? '刷新中...' : '下拉刷新'}
+      </RefreshIndicator>
+      <AnimatedContainer
+        ref={containerRef}
+        {...bind()}
+        style={{
+          y,
+          touchAction: 'pan-y',
+        }}
       >
-        <Container ref={containerRef}>
+        <Container>
           <WaterfallContainer>
             {posts.map((post) => (
               <Card key={post.id}>
-                <CardMedia aspectRatio={post.type === 'video' ? '16/9' : '4/3'}>
-                  {post.category && <Category>{post.category}</Category>}
-                  {post.type === 'video' && post.videoUrl ? (
-                    <video controls>
-                      <source src={post.videoUrl} type="video/mp4" />
-                      Your browser does not support the video tag.
-                    </video>
-                  ) : (
+                <CardMedia aspectRatio={post.type === 'image' ? '4/5' : '16/9'}>
+                  {post.type === 'image' && post.imageUrl && (
                     <img src={post.imageUrl} alt={post.title} loading="lazy" />
                   )}
+                  {post.type === 'video' && post.videoUrl && (
+                    <video src={post.videoUrl} poster={post.imageUrl} controls />
+                  )}
+                  <Category>{post.category}</Category>
                 </CardMedia>
                 <CardContent>
                   <CardHeader>
@@ -431,15 +336,15 @@ const App: React.FC = () => {
                   <Description>{post.content}</Description>
                 </CardContent>
                 <Stats>
-                  <span>👍 {post.likes}</span>
+                  <span>❤️ {post.likes}</span>
                 </Stats>
               </Card>
             ))}
           </WaterfallContainer>
           {loading && <LoadingSpinner>加载中...</LoadingSpinner>}
         </Container>
-      </PullToRefresh>
-    </PullToRefreshContainer>
+      </AnimatedContainer>
+    </>
   );
 };
 
