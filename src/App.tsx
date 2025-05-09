@@ -221,15 +221,15 @@ const App: React.FC = () => {
   
   const [{ y }, api] = useSpring(() => ({ y: 0 }));
 
-  const [contentType, setContentType] = useState<string>(() => {
+  const contentType = (() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('type') ?? 'image';
-  });
+  })();
   
-  const [category, setCategory] = useState<string>(() => {
+  const category = (() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('category') ?? '';
-  });
+  })();
 
   // Load posts
   const loadPosts = useCallback(async (refresh: boolean = false) => {
@@ -254,7 +254,7 @@ const App: React.FC = () => {
 
   // Handle pull-to-refresh
   const bind = useDrag(
-    ({ down, movement: [mx, my], cancel, direction: [dx, dy] }) => {
+    ({ down, movement: [, my], cancel, direction: [, dy] }) => {
       // 只在向下拖动时触发
       if (dy < 0) return;
       
